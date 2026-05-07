@@ -19,10 +19,10 @@ export default function SignupPage() {
     setLoading(true);
     try {
       const { data } = await api.post("/auth/signup", form);
-      login(data.token, data.user);
+      login(data.data.token, data.data.user);
       navigate("/");
     } catch (err) {
-      setError(err.response?.data?.error || "Registration failed.");
+      setError(err.response?.data?.message || "Registration failed.");
     } finally {
       setLoading(false);
     }

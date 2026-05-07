@@ -13,10 +13,10 @@ export default function CreateProjectModal({ onClose, onCreated }) {
     setLoading(true);
     try {
       const { data } = await api.post("/projects", form);
-      onCreated(data);
+      onCreated(data.data);
       onClose();
     } catch (err) {
-      setError(err.response?.data?.error || "Failed to create project.");
+      setError(err.response?.data?.message || "Failed to create project.");
     } finally {
       setLoading(false);
     }

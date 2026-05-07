@@ -19,10 +19,10 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const { data } = await api.post("/auth/login", form);
-      login(data.token, data.user);
+      login(data.data.token, data.data.user);
       navigate("/");
     } catch (err) {
-      setError(err.response?.data?.error || "Login failed.");
+      setError(err.response?.data?.message || "Login failed.");
     } finally {
       setLoading(false);
     }

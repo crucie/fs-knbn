@@ -75,10 +75,10 @@ function AdminSidebar({ projectId, members, onMemberAdded, onMemberRemoved, curr
     setInviteLoading(true);
     try {
       const { data } = await api.post(`/projects/${projectId}/members`, { username: inviteUsername });
-      onMemberAdded(data);
+      onMemberAdded(data.data);
       setInviteUsername("");
     } catch (err) {
-      setInviteError(err.response?.data?.error || "Failed to invite.");
+      setInviteError(err.response?.data?.message || "Failed to invite.");
     } finally {
       setInviteLoading(false);
     }
@@ -90,7 +90,7 @@ function AdminSidebar({ projectId, members, onMemberAdded, onMemberRemoved, curr
       await api.delete(`/projects/${projectId}/members/${userId}`);
       onMemberRemoved(userId);
     } catch (err) {
-      alert(err.response?.data?.error || "Failed to remove.");
+      alert(err.response?.data?.message || "Failed to remove.");
     }
   };
 
@@ -163,10 +163,10 @@ export default function ProjectPage() {
   useEffect(() => {
     api.get(`/projects/${projectId}`)
       .then(({ data }) => {
-        setProject(data);
-        setTasks(data.tasks || []);
-        setMembers(data.members || []);
-        setMyRole(data.myRole);
+        setProject(data.data);
+        setTasks(data.data.tasks || []);
+        setMembers(data.data.members || []);
+        setMyRole(data.data.myRole);
       })
       .catch(() => navigate("/"))
       .finally(() => setLoading(false));
@@ -199,7 +199,7 @@ export default function ProjectPage() {
       setTasks((prev) =>
         prev.map((t) => t.id === draggableId ? { ...t, status: source.droppableId } : t)
       );
-      alert(err.response?.data?.error || "Failed to update status.");
+      alert(err.response?.data?.message || "Failed to update status.");
     }
   };
 
@@ -211,7 +211,7 @@ export default function ProjectPage() {
       await api.delete(`/projects/${projectId}/tasks/${taskId}`);
       setTasks((prev) => prev.filter((t) => t.id !== taskId));
     } catch (err) {
-      alert(err.response?.data?.error || "Failed to delete.");
+      alert(err.response?.data?.message || "Failed to delete.");
     }
   };
 

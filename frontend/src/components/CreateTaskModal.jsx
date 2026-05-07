@@ -18,10 +18,10 @@ export default function CreateTaskModal({ projectId, members, onClose, onCreated
         ...(form.dueDate && { dueDate: new Date(form.dueDate).toISOString() }),
       };
       const { data } = await api.post(`/projects/${projectId}/tasks`, payload);
-      onCreated(data);
+      onCreated(data.data);
       onClose();
     } catch (err) {
-      setError(err.response?.data?.error || "Failed to create task.");
+      setError(err.response?.data?.message || "Failed to create task.");
     } finally {
       setLoading(false);
     }

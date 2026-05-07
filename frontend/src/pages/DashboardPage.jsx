@@ -13,7 +13,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     api.get("/projects")
-      .then(({ data }) => setProjects(data))
+      .then(({ data }) => setProjects(data.data))
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
