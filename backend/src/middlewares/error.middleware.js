@@ -3,9 +3,9 @@ const errorHandler = (err, req, res, next) => {
 
     res.status(statusCode).json({
         success: false,
-        messsage: err.message,
+        message: err.message,
         errors: err.errors || [],
-        stack: process.env.NODE_ENV === "developement" ? err.stack : undefined,
+        stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
     });
 };
 

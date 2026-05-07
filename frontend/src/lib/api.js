@@ -17,11 +17,13 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Global 401 handler — clear stale token
+// Global 401 handler — only redirect for stale tokens on protected routes
+// Do NOT redirect if we're already on /login or /signup (those 401s are just wrong passwords)
 api.interceptors.response.use(
   (res) => res,
   (err) => {
-    if (err.response?.status === 401) {
+    const isAuthPage = ["/login", "/signup"].includes(window.location.pathname);
+    if (err.response?.status === 401 && !isAuthPage) {
       localStorage.removeItem("token");
       localStorage.removeItem("user");
       window.location.href = "/login";

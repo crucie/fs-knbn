@@ -1,17 +1,19 @@
 import express from "express";
 import cors from "cors";
+import { ApiError } from "./utils/ApiError.js";
 import authRoutes from "./routes/auth.routes.js";
 import projectRoutes from "./routes/project.routes.js";
 import taskRoutes from "./routes/task.routes.js";
 
 const app = express();
 
-// --- Middleware ---
+const allowedOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(",").map((o) => o.trim())
+  : ["http://localhost:5173", "https://kanban.kshimate.space"];
+
 app.use(cors({
-  origin: [
-    "https://localhost:5173",
-    "https://kanban.kshimate.space"
-  ]
+  origin: allowedOrigins,
+  credentials: true,
 }));
 
 app.use(express.json());
@@ -35,8 +37,19 @@ app.use((req, res) => {
 
 // --- Global Error Handler ---
 app.use((err, req, res, next) => {
+  if (err instanceof ApiError) {
+    return res.status(err.statusCode).json({
+      success: false,
+      message: err.message,
+      errors: err.errors,
+    });
+  }
+
   console.error(err.stack);
-  res.status(500).json({ error: "Unexpected server error." });
+  return res.status(500).json({
+    success: false,
+    message: "Unexpected server error.",
+  });
 });
 
 export default app;
