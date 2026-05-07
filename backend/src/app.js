@@ -7,7 +7,13 @@ import taskRoutes from "./routes/task.routes.js";
 const app = express();
 
 // --- Middleware ---
-app.use(cors());
+app.use(cors({
+  origin: [
+    "https://localhost:5173",
+    "https://kanban.kshimate.space"
+  ]
+}));
+
 app.use(express.json());
 
 // --- Routes ---
