@@ -17,8 +17,10 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Global 401 handler — only redirect for stale tokens on protected routes
-// Do NOT redirect if we're already on /login or /signup (those 401s are just wrong passwords)
+// 401 handler — redirect for stale tokens on protected routes
+// Do NOT redirect if we're already on /login or /signup
+
+
 api.interceptors.response.use(
   (res) => res,
   (err) => {
