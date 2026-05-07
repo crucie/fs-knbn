@@ -93,3 +93,4 @@ test-results/
 .sass-cache/
 .cache-loader
 eslintcache
+/src/generated/prisma
