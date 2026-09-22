@@ -5,6 +5,11 @@ export const createProjectSchema = z.object({
   description: z.string().max(500).optional(),
 });
 
-export const inviteMemberSchema = z.object({
-  username: z.string().min(1, "Username is required."),
-});
+export const inviteMemberSchema = z
+  .object({
+    username: z.string().min(1).optional(),
+    email: z.string().email("Invalid email.").optional(),
+  })
+  .refine((data) => data.username || data.email, {
+    message: "Provide a username or email.",
+  });
