@@ -1,0 +1,19 @@
+services:
+  api:
+    build: .
+    container_name: fs-knbn-api
+    ports:
+      - "${PORT:-5000}:5000"
+    env_file:
+      - .env
+    environment:
+      PORT: "5000"
+      NODE_ENV: production
+      CORS_ORIGIN: "${CORS_ORIGIN:-http://localhost:5173,https://knbn.kshimate.space}"
+      MAX_UPLOAD_BYTES: "262144000"
+    volumes:
+      - knbn_uploads:/app/uploads
+    restart: unless-stopped
+
+volumes:
+  knbn_uploads:
