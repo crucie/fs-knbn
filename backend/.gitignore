@@ -94,3 +94,4 @@ test-results/
 .cache-loader
 eslintcache
 /src/generated/prisma
+uploads/

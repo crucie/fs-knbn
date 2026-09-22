@@ -12,29 +12,43 @@ enum Role {
   MEMBER
 }
 
-enum TaskStatus {
-  TODO
-  IN_PROGRESS
-  DONE
+enum CustomFieldType {
+  TEXT
+  NUMBER
+  DROPDOWN
+  DATE
+  CHECKBOX
 }
 
 model User {
   id             String          @id @default(uuid())
   username       String          @unique
-  password       String
+  email          String?         @unique
+  googleId       String?         @unique
+  avatarUrl      String?
+  password       String?
+  usernameSet    Boolean         @default(true)
   createdAt      DateTime        @default(now())
   projectMembers ProjectMember[]
   assignedTasks  Task[]          @relation("AssignedTasks")
   createdTasks   Task[]          @relation("CreatedTasks")
+  comments       Comment[]
+  attachments    Attachment[]
+  activities     Activity[]
+  checklistItems ChecklistItem[] @relation("ChecklistItemAssignee")
 }
 
 model Project {
-  id          String          @id @default(uuid())
-  title       String
-  description String?
-  createdAt   DateTime        @default(now())
-  members     ProjectMember[]
-  tasks       Task[]
+  id           String        @id @default(uuid())
+  title        String
+  description  String?
+  createdAt    DateTime      @default(now())
+  members      ProjectMember[]
+  columns      BoardColumn[]
+  tasks        Task[]
+  labels       Label[]
+  activities   Activity[]
+  customFields CustomField[]
 }
 
 model ProjectMember {
@@ -51,19 +65,166 @@ model ProjectMember {
   @@unique([userId, projectId])
 }
 
+model BoardColumn {
+  id        String   @id @default(uuid())
+  name      String
+  position  Int
+  color     String   @default("#888888")
+  createdAt DateTime @default(now())
+
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks     Task[]
+
+  @@index([projectId, position])
+}
+
 model Task {
-  id        String     @id @default(uuid())
-  title     String
-  status    TaskStatus @default(TODO)
-  dueDate   DateTime?
-  createdAt DateTime   @default(now())
+  id          String    @id @default(uuid())
+  title       String
+  description String?
+  position    Int       @default(0)
+  dueDate     DateTime?
+  createdAt   DateTime  @default(now())
 
   projectId String
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  columnId String
+  column   BoardColumn @relation(fields: [columnId], references: [id], onDelete: Cascade)
 
   assignedToId String?
   assignedTo   User?   @relation("AssignedTasks", fields: [assignedToId], references: [id], onDelete: SetNull)
 
   createdById String
   createdBy   User   @relation("CreatedTasks", fields: [createdById], references: [id])
+
+  labels           TaskLabel[]
+  checklists       Checklist[]
+  comments         Comment[]
+  attachments      Attachment[]
+  activities       Activity[]
+  customFieldValues CustomFieldValue[]
+
+  // Card mirroring: this task is a mirror of sourceTask
+  mirrorOfId String?
+  mirrorOf   Task?   @relation("CardMirrors", fields: [mirrorOfId], references: [id], onDelete: SetNull)
+  mirrors    Task[]  @relation("CardMirrors")
+}
+
+model Label {
+  id        String   @id @default(uuid())
+  name      String
+  color     String   @default("#61bd4f")
+  createdAt DateTime @default(now())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks     TaskLabel[]
+
+  @@unique([projectId, name])
+}
+
+model TaskLabel {
+  taskId  String
+  labelId String
+  task    Task  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  label   Label @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, labelId])
+}
+
+model Checklist {
+  id        String   @id @default(uuid())
+  title     String   @default("Checklist")
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  taskId String
+  task   Task  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  items  ChecklistItem[]
+}
+
+model ChecklistItem {
+  id          String    @id @default(uuid())
+  title       String
+  completed   Boolean   @default(false)
+  position    Int       @default(0)
+  dueDate     DateTime?
+  createdAt   DateTime  @default(now())
+
+  checklistId String
+  checklist   Checklist @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+
+  assignedToId String?
+  assignedTo   User?   @relation("ChecklistItemAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  body      String
+  createdAt DateTime @default(now())
+
+  taskId   String
+  task     Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  authorId String
+  author   User @relation(fields: [authorId], references: [id], onDelete: Cascade)
+}
+
+model Attachment {
+  id        String   @id @default(uuid())
+  filename  String
+  url       String
+  mimeType  String?
+  sizeBytes Int
+  createdAt DateTime @default(now())
+
+  taskId     String
+  task       Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  uploaderId String
+  uploader   User @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
+}
+
+model Activity {
+  id        String   @id @default(uuid())
+  type      String
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  taskId    String?
+  task      Task?   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  actorId   String
+  actor     User    @relation(fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, createdAt])
+  @@index([projectId, createdAt])
+}
+
+model CustomField {
+  id        String          @id @default(uuid())
+  name      String
+  type      CustomFieldType @default(TEXT)
+  options   Json?
+  position  Int             @default(0)
+  createdAt DateTime        @default(now())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  values    CustomFieldValue[]
+
+  @@unique([projectId, name])
+}
+
+model CustomFieldValue {
+  id      String @id @default(uuid())
+  value   Json?
+
+  taskId  String
+  task    Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  fieldId String
+  field   CustomField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, fieldId])
 }
