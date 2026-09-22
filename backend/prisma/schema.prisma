@@ -8,8 +8,20 @@ datasource db {
 }
 
 enum Role {
-  ADMIN
-  MEMBER
+  OWNER
+  MAINTAINER
+  CONTRIBUTOR
+  VIEWER
+}
+
+enum ProjectType {
+  GENERIC
+  GITHUB_LINKED
+}
+
+enum ChannelType {
+  TEXT
+  VOICE
 }
 
 enum CustomFieldType {
@@ -20,47 +32,128 @@ enum CustomFieldType {
   CHECKBOX
 }
 
+enum BountyStatus {
+  DRAFT
+  FUNDED
+  CLAIMED
+  IN_REVIEW
+  APPROVED
+  DISPUTED
+  RELEASED
+  REFUNDED
+}
+
+enum PlanTier {
+  FREE
+  PRO
+}
+
 model User {
   id             String          @id @default(uuid())
   username       String          @unique
+  displayName    String?
   email          String?         @unique
   googleId       String?         @unique
+  githubId       String?         @unique
+  githubUsername String?
+  xId            String?         @unique
+  xUsername      String?
   avatarUrl      String?
   password       String?
+  walletAddress  String?
   usernameSet    Boolean         @default(true)
   createdAt      DateTime        @default(now())
-  projectMembers ProjectMember[]
-  assignedTasks  Task[]          @relation("AssignedTasks")
-  createdTasks   Task[]          @relation("CreatedTasks")
-  comments       Comment[]
-  attachments    Attachment[]
-  activities     Activity[]
-  checklistItems ChecklistItem[] @relation("ChecklistItemAssignee")
+
+  workspacesOwned Workspace[]       @relation("WorkspaceOwner")
+  workspaceMembers WorkspaceMember[]
+  projectsCreated Project[]         @relation("ProjectCreator")
+  projectMembers  ProjectMember[]
+  assignedTasks   Task[]            @relation("AssignedTasks")
+  taskAssignees   TaskAssignee[]
+  createdTasks    Task[]            @relation("CreatedTasks")
+  comments        Comment[]
+  attachments     Attachment[]
+  activities      Activity[]
+  checklistItems  ChecklistItem[]   @relation("ChecklistItemAssignee")
+  calendarEvents  CalendarEvent[]
+  calendarSettings CalendarSettings?
+  calendarBlockedDates CalendarBlockedDate[]
+  calendarPrivateInvites CalendarPrivateInvite[]
+  teamMessages           TeamMessage[]
+  teamChannelsCreated    TeamChannel[]       @relation("ChannelCreator")
+  teamChannelMemberships TeamChannelMember[]
+  teamChannelsLeft       TeamChannelLeft[]
+  githubIdentity         GithubIdentity?
+  bountiesFunded         Bounty[]            @relation("BountyFunder")
+  bountiesClaimed        Bounty[]            @relation("BountyClaimant")
+  bountyEvents           BountyEvent[]
+  ledgerEntries          LedgerEntry[]
+}
+
+model Workspace {
+  id        String   @id @default(uuid())
+  name      String
+  planTier  PlanTier @default(FREE)
+  createdAt DateTime @default(now())
+
+  ownerId String
+  owner   User   @relation("WorkspaceOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  members  WorkspaceMember[]
+  projects Project[]
+
+  @@index([ownerId])
+}
+
+model WorkspaceMember {
+  id       String   @id @default(uuid())
+  role     Role     @default(CONTRIBUTOR)
+  joinedAt DateTime @default(now())
+
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, workspaceId])
 }
 
 model Project {
-  id           String        @id @default(uuid())
-  title        String
-  description  String?
-  createdAt    DateTime      @default(now())
-  members      ProjectMember[]
-  columns      BoardColumn[]
-  tasks        Task[]
-  labels       Label[]
-  activities   Activity[]
-  customFields CustomField[]
+  id          String      @id @default(uuid())
+  title       String
+  description String?
+  type        ProjectType @default(GENERIC)
+  createdAt   DateTime    @default(now())
+
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  createdById String?
+  createdBy   User?   @relation("ProjectCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  members          ProjectMember[]
+  columns          BoardColumn[]
+  tasks            Task[]
+  labels           Label[]
+  activities       Activity[]
+  customFields     CustomField[]
+  teamChannels     TeamChannel[]
+  githubConnection GithubConnection?
+
+  @@index([workspaceId])
 }
 
 model ProjectMember {
-  id        String   @id @default(uuid())
-  role      Role     @default(MEMBER)
-  joinedAt  DateTime @default(now())
+  id       String   @id @default(uuid())
+  role     Role     @default(CONTRIBUTOR)
+  joinedAt DateTime @default(now())
 
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   projectId String
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@unique([userId, projectId])
 }
@@ -70,22 +163,27 @@ model BoardColumn {
   name      String
   position  Int
   color     String   @default("#888888")
+  isLocked  Boolean  @default(false)
   createdAt DateTime @default(now())
 
   projectId String
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   tasks     Task[]
 
   @@index([projectId, position])
 }
 
 model Task {
-  id          String    @id @default(uuid())
-  title       String
-  description String?
-  position    Int       @default(0)
-  dueDate     DateTime?
-  createdAt   DateTime  @default(now())
+  id           String    @id @default(uuid())
+  title        String
+  description  String?
+  position     Int       @default(0)
+  dueDate      DateTime?
+  externalLink Json?
+  /// Cosmetic flag from GitHub pull: issue closed remotely while bounty open
+  githubClosedPending Boolean @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   projectId String
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -93,23 +191,37 @@ model Task {
   columnId String
   column   BoardColumn @relation(fields: [columnId], references: [id], onDelete: Cascade)
 
-  assignedToId String?
-  assignedTo   User?   @relation("AssignedTasks", fields: [assignedToId], references: [id], onDelete: SetNull)
-
   createdById String
   createdBy   User   @relation("CreatedTasks", fields: [createdById], references: [id])
 
+  /// Legacy single assignee (kept nullable for migration; prefer assignees)
+  assignedToId String?
+  assignedTo   User?   @relation("AssignedTasks", fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  assignees        TaskAssignee[]
   labels           TaskLabel[]
   checklists       Checklist[]
   comments         Comment[]
   attachments      Attachment[]
   activities       Activity[]
   customFieldValues CustomFieldValue[]
+  bounty           Bounty?
 
-  // Card mirroring: this task is a mirror of sourceTask
   mirrorOfId String?
   mirrorOf   Task?   @relation("CardMirrors", fields: [mirrorOfId], references: [id], onDelete: SetNull)
   mirrors    Task[]  @relation("CardMirrors")
+
+  @@index([projectId, columnId, position])
+}
+
+model TaskAssignee {
+  taskId String
+  userId String
+  task   Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, userId])
+  @@index([userId])
 }
 
 model Label {
@@ -146,12 +258,12 @@ model Checklist {
 }
 
 model ChecklistItem {
-  id          String    @id @default(uuid())
-  title       String
-  completed   Boolean   @default(false)
-  position    Int       @default(0)
-  dueDate     DateTime?
-  createdAt   DateTime  @default(now())
+  id        String    @id @default(uuid())
+  title     String
+  completed Boolean   @default(false)
+  position  Int       @default(0)
+  dueDate   DateTime?
+  createdAt DateTime  @default(now())
 
   checklistId String
   checklist   Checklist @relation(fields: [checklistId], references: [id], onDelete: Cascade)
@@ -227,4 +339,227 @@ model CustomFieldValue {
   field   CustomField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
 
   @@unique([taskId, fieldId])
+}
+
+model CalendarEvent {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  location    String?
+  color       String   @default("#61bd4f")
+  allDay      Boolean  @default(false)
+  kind        String   @default("EVENT")
+  guestName   String?
+  guestEmail  String?
+  guestTz     String?
+  meetLink    String?
+  shareSlug   String?
+  startAt     DateTime
+  endAt       DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startAt])
+  @@index([userId, endAt])
+  @@index([userId, shareSlug])
+}
+
+model CalendarSettings {
+  id          String   @id @default(uuid())
+  timezone    String   @default("UTC")
+  slotMinutes Int      @default(30)
+  dayStartMin Int      @default(540)
+  dayEndMin   Int      @default(1020)
+  weekdays    Json     @default("[true,true,true,true,true,false,false]")
+  updatedAt   DateTime @updatedAt
+
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model CalendarBlockedDate {
+  id     String @id @default(uuid())
+  date   String
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([userId])
+}
+
+model CalendarPrivateInvite {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  date      String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, date])
+  @@index([expiresAt])
+}
+
+model TeamChannel {
+  id        String      @id @default(uuid())
+  name      String
+  type      ChannelType @default(TEXT)
+  icon      String?
+  isPrivate Boolean     @default(false)
+  isDm      Boolean     @default(false)
+  isDefault Boolean     @default(false)
+  position  Int         @default(0)
+  canvasDoc Json?
+  createdAt DateTime    @default(now())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  createdById String?
+  createdBy   User?   @relation("ChannelCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  members  TeamChannelMember[]
+  messages TeamMessage[]
+  leftBy   TeamChannelLeft[]
+
+  @@unique([projectId, name])
+  @@index([projectId, isDm, position])
+}
+
+model TeamChannelLeft {
+  id       String   @id @default(uuid())
+  leftAt   DateTime @default(now())
+
+  channelId String
+  channel   TeamChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, userId])
+  @@index([userId])
+}
+
+model TeamChannelMember {
+  id       String   @id @default(uuid())
+  joinedAt DateTime @default(now())
+
+  channelId String
+  channel   TeamChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, userId])
+  @@index([userId])
+}
+
+model TeamMessage {
+  id        String   @id @default(uuid())
+  body      String
+  createdAt DateTime @default(now())
+
+  channelId String
+  channel   TeamChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  authorId String?
+  author   User?   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([channelId, createdAt])
+}
+
+/// GitHub App user-to-server identity (encrypted tokens)
+model GithubIdentity {
+  id             String    @id @default(uuid())
+  githubUserId   String
+  githubLogin    String
+  accessTokenEnc String
+  refreshTokenEnc String?
+  tokenExpiresAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model GithubConnection {
+  id              String    @id @default(uuid())
+  installationId  String
+  repoOwner       String
+  repoName        String
+  syncIssues      Boolean   @default(true)
+  syncProjectsV2  Boolean   @default(false)
+  lastSyncedAt    DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  projectId String  @unique
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([installationId])
+}
+
+model Bounty {
+  id                    String       @id @default(uuid())
+  amount                Decimal      @db.Decimal(18, 8)
+  tokenSymbol           String       @default("USD")
+  chain                 String       @default("CUSTODIAL")
+  status                BountyStatus @default(DRAFT)
+  escrowContractAddress String?
+  fundTxHash            String?
+  releaseTxHash         String?
+  submission            Json?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+
+  cardId String @unique
+  card   Task   @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  funderId String
+  funder   User   @relation("BountyFunder", fields: [funderId], references: [id])
+
+  claimantId String?
+  claimant   User?   @relation("BountyClaimant", fields: [claimantId], references: [id], onDelete: SetNull)
+
+  events BountyEvent[]
+
+  @@index([status])
+}
+
+model BountyEvent {
+  id        String   @id @default(uuid())
+  type      String
+  txHash    String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  bountyId String
+  bounty   Bounty @relation(fields: [bountyId], references: [id], onDelete: Cascade)
+
+  actorId String
+  actor   User   @relation(fields: [actorId], references: [id])
+
+  @@index([bountyId, createdAt])
+}
+
+/// Custodial ledger (fake money before on-chain)
+model LedgerEntry {
+  id        String   @id @default(uuid())
+  amount    Decimal  @db.Decimal(18, 8)
+  currency  String   @default("USD")
+  refType   String
+  refId     String?
+  note      String?
+  createdAt DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, currency])
+  @@index([refType, refId])
 }
