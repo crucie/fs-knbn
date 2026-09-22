@@ -3,27 +3,60 @@ import { authenticate } from "../middlewares/auth.middleware.js";
 import { isProjectAdmin, isProjectMember } from "../middlewares/prjAccess.middleware.js";
 import {
   createTask,
-  updateTaskStatus,
+  moveTask,
   updateTask,
   deleteTask,
 } from "../controllers/task.controller.js";
+import {
+  getTask,
+  setTaskLabels,
+  createChecklist,
+  updateChecklist,
+  deleteChecklist,
+  addChecklistItem,
+  updateChecklistItem,
+  deleteChecklistItem,
+  createComment,
+  deleteComment,
+  upload,
+  uploadAttachment,
+  deleteAttachment,
+  setCustomFieldValue,
+  mirrorTask,
+} from "../controllers/card.controller.js";
 
-// All task routes are nested under /api/projects/:projectId/tasks
 const router = Router({ mergeParams: true });
 
 router.use(authenticate);
-router.use(isProjectMember); // All task routes require at least project membership
+router.use(isProjectMember);
 
-// POST   /api/projects/:projectId/tasks               — Admin creates a task
 router.post("/", isProjectAdmin, createTask);
-
-// PATCH  /api/projects/:projectId/tasks/:taskId/status — Admin OR assigned member updates status
-router.patch("/:taskId/status", updateTaskStatus);
-
-// PATCH  /api/projects/:projectId/tasks/:taskId       — Admin updates task details
+router.get("/:taskId", getTask);
+router.patch("/:taskId/move", moveTask);
 router.patch("/:taskId", isProjectAdmin, updateTask);
-
-// DELETE /api/projects/:projectId/tasks/:taskId       — Admin deletes task
 router.delete("/:taskId", isProjectAdmin, deleteTask);
+
+router.put("/:taskId/labels", isProjectAdmin, setTaskLabels);
+
+router.post("/:taskId/checklists", isProjectAdmin, createChecklist);
+router.patch("/:taskId/checklists/:checklistId", isProjectAdmin, updateChecklist);
+router.delete("/:taskId/checklists/:checklistId", isProjectAdmin, deleteChecklist);
+router.post("/:taskId/checklists/:checklistId/items", isProjectAdmin, addChecklistItem);
+router.patch("/:taskId/checklists/:checklistId/items/:itemId", updateChecklistItem);
+router.delete("/:taskId/checklists/:checklistId/items/:itemId", isProjectAdmin, deleteChecklistItem);
+
+router.post("/:taskId/comments", createComment);
+router.delete("/:taskId/comments/:commentId", deleteComment);
+
+router.post(
+  "/:taskId/attachments",
+  isProjectAdmin,
+  upload.single("file"),
+  uploadAttachment
+);
+router.delete("/:taskId/attachments/:attachmentId", deleteAttachment);
+
+router.put("/:taskId/custom-fields/:fieldId", isProjectAdmin, setCustomFieldValue);
+router.post("/:taskId/mirror", isProjectAdmin, mirrorTask);
 
 export default router;

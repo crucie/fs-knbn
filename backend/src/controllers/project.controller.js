@@ -3,8 +3,17 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { createProjectSchema, inviteMemberSchema } from "../validations/project.validation.js";
+import { createDefaultColumns } from "../db/bootstrapColumns.js";
+import { shapeCard } from "../utils/cardHelpers.js";
+import { boardTaskInclude } from "./task.controller.js";
 
-// POST /api/projects — Create project, auto-assign creator as ADMIN
+
+const memberSelect = {
+  role: true,
+  user: { select: { id: true, username: true, email: true, avatarUrl: true } },
+};
+
+// POST /api/projects
 export const createProject = asyncHandler(async (req, res) => {
   const parsed = createProjectSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -21,6 +30,7 @@ export const createProject = asyncHandler(async (req, res) => {
     await tx.projectMember.create({
       data: { userId, projectId: project.id, role: "ADMIN" },
     });
+    await createDefaultColumns(tx, project.id);
     return project;
   });
 
@@ -29,7 +39,7 @@ export const createProject = asyncHandler(async (req, res) => {
     .json(new ApiResponse(201, result, "Project created successfully."));
 });
 
-// GET /api/projects — List only projects the user is a member of
+// GET /api/projects
 export const getMyProjects = asyncHandler(async (req, res) => {
   const userId = req.user.id;
 
@@ -38,9 +48,7 @@ export const getMyProjects = asyncHandler(async (req, res) => {
     include: {
       project: {
         include: {
-          members: {
-            select: { role: true, user: { select: { id: true, username: true } } },
-          },
+          members: { select: memberSelect },
           _count: { select: { tasks: true } },
         },
       },
@@ -58,7 +66,7 @@ export const getMyProjects = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, projects, "Projects fetched successfully."));
 });
 
-// GET /api/projects/:projectId — Get single project details
+// GET /api/projects/:projectId
 export const getProject = asyncHandler(async (req, res) => {
   const { projectId } = req.params;
   const userId = req.user.id;
@@ -73,15 +81,13 @@ export const getProject = asyncHandler(async (req, res) => {
   const project = await prisma.project.findUnique({
     where: { id: projectId },
     include: {
-      members: {
-        select: { role: true, user: { select: { id: true, username: true } } },
-      },
+      members: { select: memberSelect },
+      columns: { orderBy: { position: "asc" } },
+      labels: { orderBy: { name: "asc" } },
+      customFields: { orderBy: { position: "asc" } },
       tasks: {
-        include: {
-          assignedTo: { select: { id: true, username: true } },
-          createdBy: { select: { id: true, username: true } },
-        },
-        orderBy: { createdAt: "desc" },
+        include: boardTaskInclude,
+        orderBy: [{ position: "asc" }, { createdAt: "desc" }],
       },
     },
   });
@@ -90,24 +96,92 @@ export const getProject = asyncHandler(async (req, res) => {
     throw new ApiError(404, "Project not found.");
   }
 
+  const shaped = {
+    ...project,
+    myRole: membership.role,
+    tasks: project.tasks.map(shapeCard),
+  };
+
   return res
     .status(200)
-    .json(new ApiResponse(200, { ...project, myRole: membership.role }, "Project fetched successfully."));
+    .json(new ApiResponse(200, shaped, "Project fetched successfully."));
 });
 
-// POST /api/projects/:projectId/members — Admin invites a user by username
+// DELETE /api/projects/:projectId — Admin deletes project
+export const deleteProject = asyncHandler(async (req, res) => {
+  const { projectId } = req.params;
+
+  try {
+    await prisma.project.delete({ where: { id: projectId } });
+  } catch (err) {
+    if (err.code === "P2025") {
+      throw new ApiError(404, "Project not found.");
+    }
+    throw err;
+  }
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, null, "Project deleted successfully."));
+});
+
+// POST /api/projects/:projectId/leave — Member leaves (admins must transfer or delete)
+export const leaveProject = asyncHandler(async (req, res) => {
+  const { projectId } = req.params;
+  const userId = req.user.id;
+
+  const membership = await prisma.projectMember.findUnique({
+    where: { userId_projectId: { userId, projectId } },
+  });
+  if (!membership) {
+    throw new ApiError(404, "You are not a member of this project.");
+  }
+
+  if (membership.role === "ADMIN") {
+    const adminCount = await prisma.projectMember.count({
+      where: { projectId, role: "ADMIN" },
+    });
+    if (adminCount <= 1) {
+      throw new ApiError(
+        400,
+        "You are the only admin. Delete the project or promote another member first."
+      );
+    }
+  }
+
+  await prisma.projectMember.delete({
+    where: { userId_projectId: { userId, projectId } },
+  });
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, null, "Left project successfully."));
+});
+
+// POST /api/projects/:projectId/members — Invite by username or email
 export const inviteMember = asyncHandler(async (req, res) => {
   const parsed = inviteMemberSchema.safeParse(req.body);
   if (!parsed.success) {
     throw new ApiError(400, parsed.error.issues[0].message);
   }
 
-  const { username } = parsed.data;
+  const { username, email } = parsed.data;
   const { projectId } = req.params;
 
-  const targetUser = await prisma.user.findUnique({ where: { username } });
-  if (!targetUser) {
-    throw new ApiError(404, `User "${username}" not found.`);
+  let targetUser = null;
+  if (email) {
+    targetUser = await prisma.user.findUnique({
+      where: { email: email.toLowerCase() },
+    });
+    if (!targetUser) {
+      throw new ApiError(404, `User with email "${email}" not found.`);
+    }
+  } else {
+    const handle = (username || "").replace(/^@+/, "");
+    targetUser = await prisma.user.findUnique({ where: { username: handle } });
+    if (!targetUser) {
+      throw new ApiError(404, `User "@${handle}" not found.`);
+    }
   }
 
   const existing = await prisma.projectMember.findUnique({
@@ -119,7 +193,7 @@ export const inviteMember = asyncHandler(async (req, res) => {
 
   const member = await prisma.projectMember.create({
     data: { userId: targetUser.id, projectId, role: "MEMBER" },
-    include: { user: { select: { id: true, username: true } } },
+    include: { user: { select: { id: true, username: true, email: true, avatarUrl: true } } },
   });
 
   return res
@@ -127,13 +201,13 @@ export const inviteMember = asyncHandler(async (req, res) => {
     .json(new ApiResponse(201, member, "Member invited successfully."));
 });
 
-// DELETE /api/projects/:projectId/members/:userId — Admin removes a member
+// DELETE /api/projects/:projectId/members/:userId
 export const removeMember = asyncHandler(async (req, res) => {
   const { projectId, userId: targetUserId } = req.params;
   const requesterId = req.user.id;
 
   if (targetUserId === requesterId) {
-    throw new ApiError(400, "Admins cannot remove themselves.");
+    throw new ApiError(400, "Admins cannot remove themselves. Use leave project instead.");
   }
 
   try {
@@ -141,7 +215,6 @@ export const removeMember = asyncHandler(async (req, res) => {
       where: { userId_projectId: { userId: targetUserId, projectId } },
     });
   } catch (err) {
-    // P2025 = record not found in Prisma
     if (err.code === "P2025") {
       throw new ApiError(404, "Member not found.");
     }
