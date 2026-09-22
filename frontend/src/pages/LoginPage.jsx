@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import api from "../lib/api";
 import { useAuth } from "../context/AuthContext";
+import GoogleSignInButton from "../components/GoogleSignInButton";
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -20,7 +21,7 @@ export default function LoginPage() {
     try {
       const { data } = await api.post("/auth/login", form);
       login(data.data.token, data.data.user);
-      navigate("/");
+      navigate(data.data.user.usernameSet === false ? "/setup-username" : "/");
     } catch (err) {
       setError(err.response?.data?.message || "Login failed.");
     } finally {
@@ -76,6 +77,15 @@ export default function LoginPage() {
               {loading ? "Authenticating..." : "[ Login ]"}
             </button>
           </form>
+
+          <div style={{ margin: "1rem 0", textAlign: "center", fontFamily: "Space Mono, monospace", fontSize: "0.65rem", color: "var(--text-muted)" }}>
+            — or —
+          </div>
+
+          <GoogleSignInButton
+            onError={setError}
+            onSuccess={(u) => navigate(u.usernameSet === false ? "/setup-username" : "/")}
+          />
         </div>
 
         <p style={{ marginTop: "1rem", fontFamily: "Space Mono, monospace", fontSize: "0.7rem", color: "var(--text-muted)", textAlign: "center" }}>

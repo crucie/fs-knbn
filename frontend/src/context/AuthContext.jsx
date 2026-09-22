@@ -18,14 +18,23 @@ export function AuthProvider({ children }) {
     setUser(userData);
   }, []);
 
+  const updateUser = useCallback((userData) => {
+    localStorage.setItem("user", JSON.stringify(userData));
+    setUser(userData);
+  }, []);
+
   const logout = useCallback(() => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     setUser(null);
   }, []);
 
+  const needsUsername = !!user && user.usernameSet === false;
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, isAuth: !!user }}>
+    <AuthContext.Provider
+      value={{ user, login, updateUser, logout, isAuth: !!user, needsUsername }}
+    >
       {children}
     </AuthContext.Provider>
   );

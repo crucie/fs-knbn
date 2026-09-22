@@ -1,5 +1,5 @@
 import { useAuth } from "../context/AuthContext";
-import { LogOut, Terminal } from "lucide-react";
+import { LogOut, Terminal, UserRound } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 export default function Navbar() {
@@ -13,9 +13,9 @@ export default function Navbar() {
 
   return (
     <nav className="navbar">
-      <Terminal size={14} strokeWidth={2.5} />
+      <Terminal size={18} strokeWidth={2.5} />
       <span
-        style={{ fontFamily: "Space Mono, monospace", fontWeight: 700, fontSize: "0.8rem", letterSpacing: "-0.02em", cursor: "pointer" }}
+        className="navbar-brand"
         onClick={() => navigate("/")}
       >
         FS-KNBN
@@ -24,21 +24,32 @@ export default function Navbar() {
       <div style={{ flex: 1 }} />
 
       {user && (
-        <>
-          <span style={{ fontFamily: "Space Mono, monospace", fontSize: "0.65rem", color: "var(--text-muted)" }}>
-            [{user.username}]
-          </span>
+        <div className="navbar-actions">
+          <button
+            type="button"
+            className="navbar-profile"
+            onClick={() => navigate("/profile")}
+            title="Profile"
+          >
+            {user.avatarUrl ? (
+              <img src={user.avatarUrl} alt="" className="navbar-avatar" referrerPolicy="no-referrer" />
+            ) : (
+              <span className="navbar-avatar-fallback">
+                <UserRound size={14} />
+              </span>
+            )}
+            <span className="navbar-username">@{user.username}</span>
+          </button>
           <button
             id="nav-logout"
             className="btn btn-sm"
             onClick={handleLogout}
             title="Logout"
-            style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}
           >
-            <LogOut size={11} />
-            Logout
+            <LogOut size={14} />
+            <span className="nav-logout-label">Logout</span>
           </button>
-        </>
+        </div>
       )}
     </nav>
   );
