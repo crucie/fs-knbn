@@ -1,4 +1,19 @@
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: fs-knbn-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - knbn_redis:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   api:
     build: .
     container_name: fs-knbn-api
@@ -11,9 +26,14 @@ services:
       NODE_ENV: production
       CORS_ORIGIN: "${CORS_ORIGIN:-http://localhost:5173,https://knbn.kshimate.space}"
       MAX_UPLOAD_BYTES: "262144000"
+      REDIS_URL: redis://redis:6379
     volumes:
       - knbn_uploads:/app/uploads
+    depends_on:
+      redis:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
   knbn_uploads:
+  knbn_redis:
