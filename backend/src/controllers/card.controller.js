@@ -258,6 +258,12 @@ export const createComment = asyncHandler(async (req, res) => {
     actorId: req.user.id,
     type: "comment_added",
   });
+  try {
+    const { pushCommentToGithub } = await import("../services/githubPush.service.js");
+    await pushCommentToGithub(projectId, taskId, body, req.user.id);
+  } catch (err) {
+    console.warn("[github comment]", err.message);
+  }
   return res.status(201).json(new ApiResponse(201, comment, "Comment added."));
 });
 
@@ -270,7 +276,11 @@ export const deleteComment = asyncHandler(async (req, res) => {
   const membership = await prisma.projectMember.findUnique({
     where: { userId_projectId: { userId: req.user.id, projectId } },
   });
-  if (comment.authorId !== req.user.id && membership?.role !== "ADMIN") {
+  const isOwner =
+    membership?.role === "OWNER" ||
+    membership?.role === "ADMIN" ||
+    membership?.role === "MAINTAINER";
+  if (comment.authorId !== req.user.id && !isOwner) {
     throw new ApiError(403, "Forbidden.");
   }
   await prisma.comment.delete({ where: { id: commentId } });
@@ -413,8 +423,8 @@ export const mirrorTask = asyncHandler(async (req, res) => {
       userId_projectId: { userId: req.user.id, projectId: targetProjectId },
     },
   });
-  if (!membership || membership.role !== "ADMIN") {
-    throw new ApiError(403, "Admin access required on target project.");
+  if (!membership || !["OWNER", "ADMIN", "MAINTAINER"].includes(membership.role)) {
+    throw new ApiError(403, "Maintainer access required on target project.");
   }
 
   const column = await prisma.boardColumn.findFirst({
@@ -430,7 +440,6 @@ export const mirrorTask = asyncHandler(async (req, res) => {
       projectId: targetProjectId,
       columnId: targetColumnId,
       createdById: req.user.id,
-      assignedToId: null,
       mirrorOfId: source.id,
       position: 0,
     },
