@@ -4,8 +4,10 @@ export const createTaskSchema = z.object({
   title: z.string().min(1, "Title is required.").max(200),
   columnId: z.string().uuid("Invalid column ID."),
   assignedToId: z.string().uuid("Invalid user ID.").optional(),
+  assigneeIds: z.array(z.string().uuid()).optional(),
   dueDate: z.string().datetime({ offset: true }).optional(),
   description: z.string().max(10000).optional(),
+  pushToGithub: z.boolean().optional(),
 });
 
 export const moveTaskSchema = z.object({
@@ -16,6 +18,8 @@ export const updateTaskSchema = z.object({
   title: z.string().min(1, "Title is required.").max(200).optional(),
   description: z.string().max(10000).nullable().optional(),
   assignedToId: z.union([z.string().uuid("Invalid user ID."), z.null()]).optional(),
+  assigneeIds: z.array(z.string().uuid()).optional(),
   dueDate: z.union([z.string().datetime({ offset: true }), z.null()]).optional(),
   columnId: z.string().uuid("Invalid column ID.").optional(),
+  pushToGithub: z.boolean().optional(),
 });
