@@ -1,12 +1,33 @@
 import { useState } from "react";
-import { X } from "lucide-react";
+import { ChevronDown, X } from "lucide-react";
 import api from "../lib/api";
+import DueDateScroller from "./DueDateScroller";
+
+function splitDue(iso) {
+  if (!iso) return { dueDate: "", dueTime: "" };
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return { dueDate: "", dueTime: "" };
+  const dueDate = [
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, "0"),
+    String(d.getDate()).padStart(2, "0"),
+  ].join("-");
+  // Noon was the old date-only default — treat as no time
+  const exactNoon = d.getHours() === 12 && d.getMinutes() === 0 && d.getSeconds() === 0;
+  if (exactNoon) return { dueDate, dueTime: "" };
+  return {
+    dueDate,
+    dueTime: `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`,
+  };
+}
 
 export default function EditTaskModal({ projectId, task, members, columns, onClose, onUpdated }) {
+  const initial = splitDue(task.dueDate);
   const [form, setForm] = useState({
     title: task.title || "",
     assignedToId: task.assignedTo?.id || "",
-    dueDate: task.dueDate ? task.dueDate.slice(0, 10) : "",
+    dueDate: initial.dueDate,
+    dueTime: initial.dueTime,
     columnId: task.columnId || task.column?.id || columns[0]?.id || "",
   });
   const [error, setError] = useState("");
@@ -20,7 +41,9 @@ export default function EditTaskModal({ projectId, task, members, columns, onClo
       const payload = {
         title: form.title,
         assignedToId: form.assignedToId || null,
-        dueDate: form.dueDate ? new Date(form.dueDate).toISOString() : null,
+        dueDate: form.dueDate
+          ? new Date(`${form.dueDate}T${form.dueTime || "12:00"}:00`).toISOString()
+          : null,
         columnId: form.columnId,
       };
       const { data } = await api.patch(`/projects/${projectId}/tasks/${task.id}`, payload);
@@ -35,7 +58,7 @@ export default function EditTaskModal({ projectId, task, members, columns, onClo
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-box modal-box-due" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <span>// Edit Task</span>
           <button className="btn btn-sm" onClick={onClose} id="close-edit-task">
@@ -58,43 +81,50 @@ export default function EditTaskModal({ projectId, task, members, columns, onClo
 
           <div className="field">
             <label className="label">Column</label>
-            <select
-              id="edit-task-column"
-              className="select"
-              value={form.columnId}
-              onChange={(e) => setForm((f) => ({ ...f, columnId: e.target.value }))}
-            >
-              {columns.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
+            <div className="select-wrap">
+              <select
+                id="edit-task-column"
+                className="select"
+                value={form.columnId}
+                onChange={(e) => setForm((f) => ({ ...f, columnId: e.target.value }))}
+              >
+                {columns.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+              <ChevronDown size={16} className="select-chevron" aria-hidden />
+            </div>
           </div>
 
           <div className="field">
             <label className="label">Assign To</label>
-            <select
-              id="edit-task-assignee"
-              className="select"
-              value={form.assignedToId}
-              onChange={(e) => setForm((f) => ({ ...f, assignedToId: e.target.value }))}
-            >
-              <option value="">-- Unassigned --</option>
-              {members.map((m) => (
-                <option key={m.user.id} value={m.user.id}>
-                  {m.user.username} [{m.role}]
-                </option>
-              ))}
-            </select>
+            <div className="select-wrap">
+              <select
+                id="edit-task-assignee"
+                className="select"
+                value={form.assignedToId}
+                onChange={(e) => setForm((f) => ({ ...f, assignedToId: e.target.value }))}
+              >
+                <option value="">Unassigned</option>
+                {members.map((m) => (
+                  <option key={m.user.id} value={m.user.id}>
+                    {m.user.username} [{m.role}]
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={16} className="select-chevron" aria-hidden />
+            </div>
           </div>
 
           <div className="field">
-            <label className="label">Due Date</label>
-            <input
+            <label className="label" htmlFor="edit-task-due">Due Date</label>
+            <DueDateScroller
               id="edit-task-due"
-              className="input"
-              type="date"
               value={form.dueDate}
-              onChange={(e) => setForm((f) => ({ ...f, dueDate: e.target.value }))}
+              time={form.dueTime}
+              onChange={({ date, time }) =>
+                setForm((f) => ({ ...f, dueDate: date, dueTime: time || "" }))
+              }
             />
           </div>
 
@@ -103,7 +133,7 @@ export default function EditTaskModal({ projectId, task, members, columns, onClo
           <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
             <button type="button" className="btn" onClick={onClose}>Cancel</button>
             <button id="edit-task-submit" type="submit" className="btn btn-solid" disabled={loading}>
-              {loading ? "Saving..." : "[ Save ]"}
+              {loading ? "Saving..." : "Save"}
             </button>
           </div>
         </form>
