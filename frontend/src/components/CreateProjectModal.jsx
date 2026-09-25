@@ -1,18 +1,33 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import api from "../lib/api";
 
-export default function CreateProjectModal({ onClose, onCreated }) {
-  const [form, setForm] = useState({ title: "", description: "" });
+export default function CreateProjectModal({ onClose, onCreated, workspaces = [], defaultWorkspaceId }) {
+  const [form, setForm] = useState({
+    title: "",
+    description: "",
+    workspaceId: defaultWorkspaceId || workspaces[0]?.id || "",
+  });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!form.workspaceId && (defaultWorkspaceId || workspaces[0]?.id)) {
+      setForm((f) => ({ ...f, workspaceId: defaultWorkspaceId || workspaces[0]?.id }));
+    }
+  }, [defaultWorkspaceId, workspaces, form.workspaceId]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
     setLoading(true);
     try {
-      const { data } = await api.post("/projects", form);
+      const payload = {
+        title: form.title,
+        description: form.description || undefined,
+        workspaceId: form.workspaceId || undefined,
+      };
+      const { data } = await api.post("/projects", payload);
       onCreated(data.data);
       onClose();
     } catch (err) {
@@ -33,6 +48,21 @@ export default function CreateProjectModal({ onClose, onCreated }) {
         </div>
 
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+          {workspaces.length > 0 && (
+            <div className="field">
+              <label className="label">Workspace</label>
+              <select
+                className="input"
+                value={form.workspaceId}
+                onChange={(e) => setForm((f) => ({ ...f, workspaceId: e.target.value }))}
+              >
+                {workspaces.map((w) => (
+                  <option key={w.id} value={w.id}>{w.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div className="field">
             <label className="label">Project Title *</label>
             <input
@@ -64,7 +94,7 @@ export default function CreateProjectModal({ onClose, onCreated }) {
           <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
             <button type="button" className="btn" onClick={onClose}>Cancel</button>
             <button id="create-project-submit" type="submit" className="btn btn-solid" disabled={loading}>
-              {loading ? "Creating..." : "[ Create ]"}
+              {loading ? "Creating..." : "Create"}
             </button>
           </div>
         </form>
