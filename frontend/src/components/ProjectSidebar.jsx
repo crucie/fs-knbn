@@ -1,49 +1,38 @@
-import { useState } from "react";
-import { UserPlus, Trash2, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
-import api from "../lib/api";
+import { useEffect, useState } from "react";
+import {
+  Users, LayoutGrid, Table2, Calendar,
+  GanttChart, PieChart, PanelLeftClose, PanelLeftOpen, X,
+} from "lucide-react";
+
+const NAV_ITEMS = [
+  { id: "board", label: "Board", Icon: LayoutGrid },
+  { id: "table", label: "Table", Icon: Table2 },
+  { id: "calendar", label: "Calendar", Icon: Calendar },
+  { id: "timeline", label: "Timeline", Icon: GanttChart },
+  { id: "dashboard", label: "Dashboard", Icon: PieChart },
+  { id: "team", label: "Team", Icon: Users },
+];
 
 export default function ProjectSidebar({
-  projectId,
-  members,
-  onMemberAdded,
-  onMemberRemoved,
-  currentUserId,
+  activeView,
+  onViewChange,
   collapsed,
   onToggle,
   mobileOpen,
   onMobileClose,
 }) {
-  const [inviteValue, setInviteValue] = useState("");
-  const [inviteError, setInviteError] = useState("");
-  const [inviteLoading, setInviteLoading] = useState(false);
+  const [pulseId, setPulseId] = useState(null);
 
-  const handleInvite = async (e) => {
-    e.preventDefault();
-    setInviteError("");
-    setInviteLoading(true);
-    try {
-      const trimmed = inviteValue.trim().replace(/^@+/, "");
-      const payload = trimmed.includes("@")
-        ? { email: trimmed.toLowerCase() }
-        : { username: trimmed };
-      const { data } = await api.post(`/projects/${projectId}/members`, payload);
-      onMemberAdded(data.data);
-      setInviteValue("");
-    } catch (err) {
-      setInviteError(err.response?.data?.message || "Failed to invite.");
-    } finally {
-      setInviteLoading(false);
-    }
-  };
+  useEffect(() => {
+    if (!pulseId) return undefined;
+    const t = setTimeout(() => setPulseId(null), 480);
+    return () => clearTimeout(t);
+  }, [pulseId]);
 
-  const handleRemove = async (userId) => {
-    if (!window.confirm("Remove this member?")) return;
-    try {
-      await api.delete(`/projects/${projectId}/members/${userId}`);
-      onMemberRemoved(userId);
-    } catch (err) {
-      alert(err.response?.data?.message || "Failed to remove.");
-    }
+  const selectView = (id) => {
+    setPulseId(id);
+    onViewChange(id);
+    onMobileClose?.();
   };
 
   return (
@@ -59,7 +48,7 @@ export default function ProjectSidebar({
 
       <aside
         className={[
-          "sidebar",
+          "sidebar project-nav",
           collapsed ? "sidebar-collapsed" : "",
           mobileOpen ? "sidebar-mobile-open" : "",
         ]
@@ -83,66 +72,37 @@ export default function ProjectSidebar({
           >
             <X size={15} />
           </button>
-          {!collapsed && <span className="sidebar-toolbar-label">Team</span>}
+          {!collapsed && <span className="sidebar-toolbar-label">Project</span>}
         </div>
 
-        {!collapsed && (
-          <div className="sidebar-body">
-            <section className="sidebar-section">
-              <p className="sidebar-section-title">
-                <UserPlus size={14} /> Invite by username
-              </p>
-              <p className="sidebar-hint">
-                Use their unique @username (or email).
-              </p>
-              <form className="sidebar-invite-form" onSubmit={handleInvite}>
-                <input
-                  id="invite-username"
-                  className="input"
-                  placeholder="@username"
-                  value={inviteValue}
-                  onChange={(e) => setInviteValue(e.target.value)}
-                  required
-                />
-                {inviteError && <div className="error-msg">{inviteError}</div>}
-                <button id="invite-submit" type="submit" className="btn btn-solid" disabled={inviteLoading}>
-                  {inviteLoading ? "Inviting..." : "[ Invite ]"}
-                </button>
-              </form>
-            </section>
-
-            <hr className="sidebar-divider" />
-
-            <section className="sidebar-section">
-              <p className="sidebar-section-title">Members</p>
-              <div className="sidebar-member-list">
-                {members.map((m) => (
-                  <div key={m.user.id} className="member-row">
-                    <div className="member-info">
-                      <span className="member-name">@{m.user.username}</span>
-                      {m.user.email && (
-                        <span className="member-email">{m.user.email}</span>
-                      )}
-                      <span className={`tag ${m.role === "ADMIN" ? "tag-admin" : "tag-member"}`}>
-                        {m.role}
-                      </span>
-                    </div>
-                    {m.user.id !== currentUserId && (
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-danger"
-                        onClick={() => handleRemove(m.user.id)}
-                        title="Remove member"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </section>
-          </div>
-        )}
+        <nav className="project-nav-list" aria-label="Project views">
+          {NAV_ITEMS.map(({ id, label, Icon }) => {
+            const active = activeView === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                className={`project-nav-item ${active ? "active" : ""}`}
+                onClick={() => selectView(id)}
+                title={label}
+                aria-current={active ? "page" : undefined}
+              >
+                <span
+                  className={[
+                    "nav-icon",
+                    active ? "is-active" : "",
+                    pulseId === id ? "is-pop" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                >
+                  <Icon size={16} strokeWidth={active ? 2.35 : 2} />
+                </span>
+                {!collapsed && <span className="nav-label">{label}</span>}
+              </button>
+            );
+          })}
+        </nav>
       </aside>
     </>
   );

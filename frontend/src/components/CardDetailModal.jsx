@@ -3,6 +3,8 @@ import {
   X, Plus, Trash2, Paperclip, MessageSquare, CheckSquare, Tag, Copy,
 } from "lucide-react";
 import api from "../lib/api";
+import { useDialog } from "../context/DialogContext";
+import BountyPanel from "./BountyPanel";
 
 const API_ORIGIN = import.meta.env.VITE_API_URL || "";
 
@@ -12,7 +14,7 @@ function fileUrl(url) {
   return `${API_ORIGIN}${url}`;
 }
 
-const LABEL_COLORS = ["#61bd4f", "#f2d600", "#ff9f1a", "#eb5a46", "#c377e0", "#0079bf", "#00c2e0", "#51e898", "#ff78cb", "#344563"];
+const LABEL_COLORS = ["#61bd4f", "#f2d600", "#ff9f1a", "#eb5a46", "#c377e0", "#FF2D2D", "#00c2e0", "#51e898", "#ff78cb", "#344563"];
 
 export default function CardDetailModal({
   projectId,
@@ -23,12 +25,14 @@ export default function CardDetailModal({
   customFields,
   projects,
   isAdmin,
+  myRole,
   onClose,
   onUpdated,
   onDeleted,
   onLabelsChanged,
   onFieldsChanged,
 }) {
+  const { alert, confirm } = useDialog();
   const [card, setCard] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -228,11 +232,16 @@ export default function CardDetailModal({
       targetColumnId: mirrorColumnId,
     });
     await reload();
-    alert("Mirror created on target board.");
+    await alert("Mirror created on target board.");
   };
 
   const deleteCard = async () => {
-    if (!window.confirm("Delete this card?")) return;
+    const ok = await confirm("Delete this card?", {
+      title: "Delete card",
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
     await api.delete(`/projects/${projectId}/tasks/${taskId}`);
     onDeleted?.(taskId);
     onClose();
@@ -242,7 +251,7 @@ export default function CardDetailModal({
     return (
       <div className="modal-overlay" onClick={onClose}>
         <div className="modal-box card-detail" onClick={(e) => e.stopPropagation()}>
-          <div className="spinner" />
+          <div className="skeleton-card" style={{ minHeight: 280, margin: 0 }} />
         </div>
       </div>
     );
@@ -300,6 +309,41 @@ export default function CardDetailModal({
                 onBlur={() => isAdmin && saveCard({ description: card.description || null })}
               />
             </div>
+
+            {card.externalLink?.url && (
+              <div className="field">
+                <a href={card.externalLink.url} target="_blank" rel="noreferrer" className="btn btn-sm">
+                  GitHub #{card.externalLink.externalNumber}
+                </a>
+                {card.githubClosedPending && (
+                  <p className="error-msg" style={{ marginTop: 8 }}>
+                    Issue was closed on GitHub but bounty is still unreleased — resolve?
+                  </p>
+                )}
+              </div>
+            )}
+
+            {isAdmin && (
+              <div className="field">
+                <label className="label">
+                  <input
+                    type="checkbox"
+                    onChange={(e) => {
+                      if (e.target.checked) saveCard({ pushToGithub: true });
+                    }}
+                  />{" "}
+                  Push / sync to GitHub issue
+                </label>
+              </div>
+            )}
+
+            <BountyPanel
+              projectId={projectId}
+              taskId={taskId}
+              bounty={card.bounty}
+              myRole={myRole || (isAdmin ? "OWNER" : "CONTRIBUTOR")}
+              onChanged={reload}
+            />
 
             <div className="field">
               <label className="label"><Tag size={12} /> Labels</label>
