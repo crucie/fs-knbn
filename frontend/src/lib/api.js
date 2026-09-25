@@ -1,14 +1,14 @@
 import axios from "axios";
 
-const BASE_URL = import.meta.env.VITE_API_URL
-  ? `${import.meta.env.VITE_API_URL}/api`
-  : "/api";
+// Always use same-origin /api in the browser so Vite (dev) or the host
+// proxies the request — avoids cross-origin / false "CORS" failures.
+const BASE_URL = "/api";
 
 const api = axios.create({
   baseURL: BASE_URL,
+  timeout: 30000,
 });
 
-// Inject JWT on every request
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
   if (token) {
@@ -17,15 +17,16 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// 401 handler — redirect for stale tokens on protected routes
-// Do NOT redirect if we're already on /login or /signup
-
-
 api.interceptors.response.use(
   (res) => res,
   (err) => {
-    const isAuthPage = ["/login", "/signup"].includes(window.location.pathname);
-    if (err.response?.status === 401 && !isAuthPage) {
+    const path = window.location.pathname;
+    const isAuthPage = ["/login", "/signup", "/setup-username", "/auth/callback"].includes(path);
+    const isPublicBook = path.startsWith("/book/");
+    const status = err.response?.status;
+
+    // Only force logout on auth failures — never on 404 / 500
+    if (status === 401 && !isAuthPage && !isPublicBook) {
       localStorage.removeItem("token");
       localStorage.removeItem("user");
       window.location.href = "/login";
