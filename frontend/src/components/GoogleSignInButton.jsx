@@ -4,16 +4,26 @@ import { useAuth } from "../context/AuthContext";
 
 const GIS_SRC = "https://accounts.google.com/gsi/client";
 
+let gisScriptPromise = null;
+let gisInitializedFor = null;
+let activeCredentialHandler = null;
+
 function loadGisScript() {
-  return new Promise((resolve, reject) => {
-    if (window.google?.accounts?.id) {
-      resolve();
-      return;
-    }
+  if (window.google?.accounts?.id) return Promise.resolve();
+  if (gisScriptPromise) return gisScriptPromise;
+
+  gisScriptPromise = new Promise((resolve, reject) => {
     const existing = document.querySelector(`script[src="${GIS_SRC}"]`);
     if (existing) {
+      if (window.google?.accounts?.id) {
+        resolve();
+        return;
+      }
       existing.addEventListener("load", () => resolve());
-      existing.addEventListener("error", () => reject(new Error("Failed to load Google Sign-In.")));
+      existing.addEventListener("error", () => {
+        gisScriptPromise = null;
+        reject(new Error("Failed to load Google Sign-In."));
+      });
       return;
     }
     const script = document.createElement("script");
@@ -21,13 +31,29 @@ function loadGisScript() {
     script.async = true;
     script.defer = true;
     script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Failed to load Google Sign-In."));
+    script.onerror = () => {
+      gisScriptPromise = null;
+      reject(new Error("Failed to load Google Sign-In."));
+    };
     document.head.appendChild(script);
   });
+
+  return gisScriptPromise;
 }
 
-export default function GoogleSignInButton({ onError, onSuccess }) {
-  const { login } = useAuth();
+function ensureGisInitialized(clientId) {
+  if (!window.google?.accounts?.id) return;
+  if (gisInitializedFor === clientId) return;
+  window.google.accounts.id.initialize({
+    client_id: clientId,
+    callback: (response) => activeCredentialHandler?.(response),
+    cancel_on_tap_outside: true,
+  });
+  gisInitializedFor = clientId;
+}
+
+export default function GoogleSignInButton({ onError, onSuccess, mode = "login" }) {
+  const { login, updateUser } = useAuth();
   const btnRef = useRef(null);
   const [ready, setReady] = useState(false);
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -35,15 +61,28 @@ export default function GoogleSignInButton({ onError, onSuccess }) {
   const handleCredential = useCallback(
     async (response) => {
       try {
-        const { data } = await api.post("/auth/google", { idToken: response.credential });
+        const { data } = await api.post("/auth/google", {
+          idToken: response.credential,
+          mode,
+        });
         login(data.data.token, data.data.user);
-        onSuccess?.(data.data.user);
+        if (mode === "link") updateUser(data.data.user);
+        onSuccess?.(data.data.user, data.data);
       } catch (err) {
         onError?.(err.response?.data?.message || "Google Sign-In failed.");
       }
     },
-    [login, onError, onSuccess]
+    [login, updateUser, onError, onSuccess, mode]
   );
+
+  useEffect(() => {
+    activeCredentialHandler = handleCredential;
+    return () => {
+      if (activeCredentialHandler === handleCredential) {
+        activeCredentialHandler = null;
+      }
+    };
+  }, [handleCredential]);
 
   useEffect(() => {
     if (!clientId) return;
@@ -52,10 +91,8 @@ export default function GoogleSignInButton({ onError, onSuccess }) {
     loadGisScript()
       .then(() => {
         if (cancelled || !btnRef.current) return;
-        window.google.accounts.id.initialize({
-          client_id: clientId,
-          callback: handleCredential,
-        });
+        ensureGisInitialized(clientId);
+        btnRef.current.innerHTML = "";
         window.google.accounts.id.renderButton(btnRef.current, {
           theme: "outline",
           size: "large",
@@ -70,7 +107,7 @@ export default function GoogleSignInButton({ onError, onSuccess }) {
     return () => {
       cancelled = true;
     };
-  }, [clientId, handleCredential, onError]);
+  }, [clientId, onError]);
 
   if (!clientId) {
     return (
@@ -83,11 +120,9 @@ export default function GoogleSignInButton({ onError, onSuccess }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.5rem" }}>
       {!ready && (
-        <span style={{ fontFamily: "Space Mono, monospace", fontSize: "0.65rem", color: "var(--text-muted)" }}>
-          Loading Google...
-        </span>
+        <div className="skeleton-card" style={{ width: 220, minHeight: 40, borderRadius: 8 }} />
       )}
-      <div ref={btnRef} id="google-signin-btn" />
+      <div ref={btnRef} className="google-signin-btn" />
     </div>
   );
 }
