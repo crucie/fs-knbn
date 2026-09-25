@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import api from "../lib/api";
 import { useAuth } from "../context/AuthContext";
-import GoogleSignInButton from "../components/GoogleSignInButton";
+import SocialAuthButtons from "../components/SocialAuthButtons";
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -33,7 +33,7 @@ export default function LoginPage() {
     <div className="page-center">
       <div className="auth-box">
         <div className="auth-logo">FS-KNBN</div>
-        <div className="auth-tagline">// team task manager</div>
+        <div className="auth-tagline">Team task manager</div>
 
         <div className="card-hi">
           <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -74,21 +74,34 @@ export default function LoginPage() {
               className="btn btn-solid"
               disabled={loading}
             >
-              {loading ? "Authenticating..." : "[ Login ]"}
+              {loading ? "Authenticating..." : "Sign in"}
             </button>
           </form>
 
-          <div style={{ margin: "1rem 0", textAlign: "center", fontFamily: "Space Mono, monospace", fontSize: "0.65rem", color: "var(--text-muted)" }}>
+          <div
+            style={{
+              margin: "1rem 0",
+              textAlign: "center",
+              fontFamily: "var(--font)",
+              fontSize: "0.65rem",
+              color: "var(--text-muted)",
+            }}
+          >
             — or —
           </div>
 
-          <GoogleSignInButton
-            onError={setError}
-            onSuccess={(u) => navigate(u.usernameSet === false ? "/setup-username" : "/")}
-          />
+          <SocialAuthButtons onError={setError} mode="login" />
         </div>
 
-        <p style={{ marginTop: "1rem", fontFamily: "Space Mono, monospace", fontSize: "0.7rem", color: "var(--text-muted)", textAlign: "center" }}>
+        <p
+          style={{
+            marginTop: "1rem",
+            fontFamily: "var(--font)",
+            fontSize: "0.7rem",
+            color: "var(--text-muted)",
+            textAlign: "center",
+          }}
+        >
           No account?{" "}
           <Link to="/signup" style={{ color: "var(--text)", textDecoration: "underline" }}>
             Create one
