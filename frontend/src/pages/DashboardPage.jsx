@@ -1,49 +1,79 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, FolderOpen, Trash2, LogOut } from "lucide-react";
+import { Plus, FolderOpen } from "lucide-react";
 import Navbar from "../components/Navbar";
 import CreateProjectModal from "../components/CreateProjectModal";
+import { cachedGet, cachePeek, cacheInvalidate, prefetchProject } from "../lib/queryCache";
 import api from "../lib/api";
+import { isOwner } from "../lib/roles";
 
 export default function DashboardPage() {
   const navigate = useNavigate();
-  const [projects, setProjects] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [workspaces, setWorkspaces] = useState([]);
+  const [workspaceId, setWorkspaceId] = useState(() => localStorage.getItem("activeWorkspaceId") || "");
+  const [projects, setProjects] = useState(() => {
+    const hit = cachePeek("/projects");
+    return hit?.data?.data || [];
+  });
+  const [loading, setLoading] = useState(() => !cachePeek("/projects"));
   const [showModal, setShowModal] = useState(false);
+  const [newWsName, setNewWsName] = useState("");
 
   useEffect(() => {
-    api.get("/projects")
-      .then(({ data }) => setProjects(data.data))
-      .catch(console.error)
-      .finally(() => setLoading(false));
+    let alive = true;
+    api.get("/workspaces")
+      .then(({ data }) => {
+        if (!alive) return;
+        const list = data.data || [];
+        setWorkspaces(list);
+        if (!workspaceId && list[0]) {
+          setWorkspaceId(list[0].id);
+          localStorage.setItem("activeWorkspaceId", list[0].id);
+        }
+      })
+      .catch(console.error);
+    return () => { alive = false; };
   }, []);
 
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    const load = workspaceId
+      ? api.get(`/workspaces/${workspaceId}/projects`)
+      : cachedGet("/projects");
+    load
+      .then(({ data }) => {
+        if (alive) setProjects(data.data || []);
+      })
+      .catch(() =>
+        api.get("/projects").then(({ data }) => {
+          if (alive) setProjects(data.data || []);
+        })
+      )
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => { alive = false; };
+  }, [workspaceId]);
+
   const handleCreated = (project) => {
+    cacheInvalidate("/projects");
     setProjects((prev) => [
-      { ...project, myRole: "ADMIN", _count: { tasks: 0 }, members: [] },
+      { ...project, myRole: "OWNER", _count: { tasks: 0 }, members: [] },
       ...prev,
     ]);
   };
 
-  const handleDelete = async (e, projectId) => {
-    e.stopPropagation();
-    if (!window.confirm("Delete this project and all its tasks?")) return;
+  const createWorkspace = async () => {
+    if (!newWsName.trim()) return;
     try {
-      await api.delete(`/projects/${projectId}`);
-      setProjects((prev) => prev.filter((p) => p.id !== projectId));
+      const { data } = await api.post("/workspaces", { name: newWsName.trim() });
+      setWorkspaces((prev) => [...prev, data.data]);
+      setWorkspaceId(data.data.id);
+      localStorage.setItem("activeWorkspaceId", data.data.id);
+      setNewWsName("");
     } catch (err) {
-      alert(err.response?.data?.message || "Failed to delete project.");
-    }
-  };
-
-  const handleLeave = async (e, projectId) => {
-    e.stopPropagation();
-    if (!window.confirm("Leave this project?")) return;
-    try {
-      await api.post(`/projects/${projectId}/leave`);
-      setProjects((prev) => prev.filter((p) => p.id !== projectId));
-    } catch (err) {
-      alert(err.response?.data?.message || "Failed to leave project.");
+      console.error(err);
     }
   };
 
@@ -51,10 +81,10 @@ export default function DashboardPage() {
     <>
       <Navbar />
       <div className="page-body">
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.75rem" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.75rem", gap: "1rem", flexWrap: "wrap" }}>
           <div>
             <h1 style={{ fontSize: "1.25rem", marginBottom: "0.35rem" }}>// Dashboard</h1>
-            <p style={{ fontFamily: "Space Mono, monospace", fontSize: "0.8125rem", color: "var(--text-muted)" }}>
+            <p style={{ fontFamily: "var(--font)", fontSize: "0.8125rem", color: "var(--text-muted)" }}>
               {projects.length} project{projects.length !== 1 ? "s" : ""} — select one to open the board
             </p>
           </div>
@@ -69,17 +99,38 @@ export default function DashboardPage() {
           </button>
         </div>
 
-        {loading ? (
-          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "2rem 0" }}>
-            <div className="spinner" />
-            <span style={{ fontFamily: "Space Mono, monospace", fontSize: "0.7rem", color: "var(--text-muted)" }}>
-              Loading projects...
-            </span>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginBottom: "1.25rem", flexWrap: "wrap" }}>
+          <select
+            className="input"
+            style={{ maxWidth: 220 }}
+            value={workspaceId}
+            onChange={(e) => {
+              setWorkspaceId(e.target.value);
+              localStorage.setItem("activeWorkspaceId", e.target.value);
+            }}
+          >
+            {workspaces.map((w) => (
+              <option key={w.id} value={w.id}>{w.name}</option>
+            ))}
+          </select>
+          <input
+            className="input"
+            style={{ maxWidth: 180 }}
+            placeholder="New workspace"
+            value={newWsName}
+            onChange={(e) => setNewWsName(e.target.value)}
+          />
+          <button type="button" className="btn btn-sm" onClick={createWorkspace}>Add</button>
+        </div>
+
+        {loading && projects.length === 0 ? (
+          <div className="skeleton-grid">
+            <div className="skeleton-card" />
+            <div className="skeleton-card" />
+            <div className="skeleton-card" />
           </div>
         ) : projects.length === 0 ? (
-          <div className="empty-state">
-            No projects yet. Create one to get started.
-          </div>
+          <div className="empty-state">No projects yet. Create one to get started.</div>
         ) : (
           <div className="project-grid">
             {projects.map((p) => (
@@ -88,47 +139,29 @@ export default function DashboardPage() {
                 id={`project-card-${p.id}`}
                 className="project-card"
                 onClick={() => navigate(`/projects/${p.id}`)}
+                onMouseEnter={() => prefetchProject(p.id)}
                 role="button"
                 tabIndex={0}
                 onKeyDown={(e) => e.key === "Enter" && navigate(`/projects/${p.id}`)}
               >
                 <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "0.75rem" }}>
                   <FolderOpen size={20} strokeWidth={2} style={{ marginTop: "2px", flexShrink: 0 }} />
-                  <span className={`tag ${p.myRole === "ADMIN" ? "tag-admin" : "tag-member"}`}>
+                  <span className={`tag ${isOwner(p.myRole) ? "tag-admin" : "tag-member"}`}>
                     {p.myRole}
                   </span>
                 </div>
-
                 <div className="project-card-title">{p.title}</div>
-
                 {p.description && (
-                  <p style={{ fontSize: "0.9rem", color: "var(--text-muted)", marginBottom: "0.75rem", lineHeight: 1.5 }}>
+                  <p className="project-card-desc">
                     {p.description.slice(0, 80)}{p.description.length > 80 ? "…" : ""}
                   </p>
                 )}
-
-                <div className="project-card-meta" style={{ display: "flex", gap: "1rem", marginTop: "auto", alignItems: "center", justifyContent: "space-between" }}>
+                <div className="project-card-meta" style={{ marginTop: "auto" }}>
                   <span style={{ display: "flex", gap: "1rem" }}>
                     <span>{p._count?.tasks ?? 0} tasks</span>
                     <span>{p.members?.length ?? 0} members</span>
+                    {p.type === "GITHUB_LINKED" && <span>GitHub</span>}
                   </span>
-                  {p.myRole === "ADMIN" ? (
-                    <button
-                      className="btn btn-sm btn-danger"
-                      onClick={(e) => handleDelete(e, p.id)}
-                      title="Delete project"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  ) : (
-                    <button
-                      className="btn btn-sm"
-                      onClick={(e) => handleLeave(e, p.id)}
-                      title="Leave project"
-                    >
-                      <LogOut size={13} />
-                    </button>
-                  )}
                 </div>
               </div>
             ))}
@@ -137,7 +170,12 @@ export default function DashboardPage() {
       </div>
 
       {showModal && (
-        <CreateProjectModal onClose={() => setShowModal(false)} onCreated={handleCreated} />
+        <CreateProjectModal
+          onClose={() => setShowModal(false)}
+          onCreated={handleCreated}
+          workspaces={workspaces}
+          defaultWorkspaceId={workspaceId}
+        />
       )}
     </>
   );
